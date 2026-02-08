@@ -1,33 +1,265 @@
 ---
 import Base from './Base.astro';
 
+interface Heading {
+  depth: number;
+  slug: string;
+  text: string;
+}
+
+interface InteractiveOptions {
+  toc?: boolean;
+  collapsiblePhases?: boolean;
+}
+
 interface Props {
   title: string;
   subtitle?: string;
   date: Date;
+  headings?: Heading[];
+  interactive?: InteractiveOptions;
 }
 
-const { title, subtitle, date } = Astro.props;
+const { title, subtitle, date, headings = [], interactive } = Astro.props;
 const dateStr = date.toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' });
+const tocHeadings = interactive?.toc
+  ? headings.filter(heading => heading.depth === 2 || heading.depth === 3)
+  : [];
+const showToc = tocHeadings.length > 0;
 ---
 <Base title={title}>
-  <article class="post">
-    <header class="post-hero">
-      <h1>{title}</h1>
-      {subtitle && <p class="subtitle">{subtitle}</p>}
-      <p class="meta">Saif Khattak · {dateStr}</p>
-    </header>
-    <div class="post-body">
-      <slot />
-    </div>
-  </article>
+  <div class:list={['post-shell', showToc && 'has-toc']}>
+    {showToc && (
+      <aside class="post-toc" data-post-toc>
+        <button
+          type="button"
+          class="toc-collapse-toggle"
+          data-toc-toggle
+          aria-expanded="true"
+          aria-label="Collapse table of contents"
+        >
+          <span class="toc-toggle-icon" data-toc-toggle-icon aria-hidden="true">◂</span>
+          <span class="toc-toggle-label">Hide</span>
+        </button>
+        <div class="toc-content">
+          <p class="toc-title">On This Page</p>
+          <ul>
+            {tocHeadings.map(heading => (
+              <li class={`toc-depth-${heading.depth}`}>
+                <a href={`#${heading.slug}`}>{heading.text}</a>
+              </li>
+            ))}
+          </ul>
+        </div>
+      </aside>
+    )}
+    <article
+      class="post"
+      data-enhanced-post
+      data-enable-collapsible-phases={interactive?.collapsiblePhases ? 'true' : 'false'}
+    >
+      <header class="post-hero">
+        <h1>{title}</h1>
+        {subtitle && <p class="subtitle">{subtitle}</p>}
+        <p class="meta">Saif Khattak · {dateStr}</p>
+      </header>
+      <div class="post-body">
+        <slot />
+      </div>
+    </article>
+  </div>
 </Base>
 
+<script is:inline>
+  (() => {
+    const initPostEnhancements = () => {
+      const article = document.querySelector('[data-enhanced-post]');
+      if (!(article instanceof HTMLElement)) return;
+      if (article.dataset.enhanced === 'true') return;
+      article.dataset.enhanced = 'true';
+
+      const body = article.querySelector('.post-body');
+      if (!(body instanceof HTMLElement)) return;
+
+      if (article.dataset.enableCollapsiblePhases === 'true') {
+        const topLevelNodes = Array.from(body.children);
+
+        for (const node of topLevelNodes) {
+          if (!(node instanceof HTMLHeadingElement)) continue;
+          if (node.tagName !== 'H2') continue;
+          const title = node.textContent?.trim() ?? '';
+          if (!/^Phase\s+\d+:/i.test(title)) continue;
+
+          const details = document.createElement('details');
+          details.className = 'phase-section';
+          details.open = true;
+
+          const summary = document.createElement('summary');
+          summary.className = 'phase-summary';
+
+          body.insertBefore(details, node);
+          details.appendChild(summary);
+          summary.appendChild(node);
+          node.classList.add('phase-heading');
+
+          const content = document.createElement('div');
+          content.className = 'phase-content';
+          details.appendChild(content);
+
+          let cursor = details.nextSibling;
+          while (cursor) {
+            if (cursor instanceof HTMLElement && cursor.tagName === 'H2') break;
+            const next = cursor.nextSibling;
+            content.appendChild(cursor);
+            cursor = next;
+          }
+        }
+
+        const openPhaseForHash = () => {
+          const id = decodeURIComponent(window.location.hash.replace(/^#/, ''));
+          if (!id) return;
+          const target = document.getElementById(id);
+          if (!target) return;
+          const section = target.closest('details.phase-section');
+          if (section instanceof HTMLDetailsElement) section.open = true;
+        };
+
+        openPhaseForHash();
+        window.addEventListener('hashchange', openPhaseForHash, { passive: true });
+      }
+
+      const tocRoot = document.querySelector('[data-post-toc]');
+      if (!(tocRoot instanceof HTMLElement)) return;
+
+      const tocShell = tocRoot.closest('.post-shell');
+      const tocToggle = tocRoot.querySelector('[data-toc-toggle]');
+      const tocToggleIcon = tocRoot.querySelector('[data-toc-toggle-icon]');
+      const tocStateStorageKey = 'post-toc-collapsed';
+
+      const setTocCollapsed = collapsed => {
+        if (tocShell instanceof HTMLElement) {
+          tocShell.classList.toggle('is-toc-collapsed', collapsed);
+        }
+        if (tocToggle instanceof HTMLButtonElement) {
+          tocToggle.setAttribute('aria-expanded', collapsed ? 'false' : 'true');
+          tocToggle.setAttribute(
+            'aria-label',
+            collapsed ? 'Expand table of contents' : 'Collapse table of contents',
+          );
+          const label = tocToggle.querySelector('.toc-toggle-label');
+          if (label) label.textContent = collapsed ? 'Show' : 'Hide';
+        }
+        if (tocToggleIcon instanceof HTMLElement) {
+          tocToggleIcon.textContent = collapsed ? '▸' : '◂';
+        }
+      };
+
+      let tocCollapsed = false;
+      try {
+        const stored = window.localStorage.getItem(tocStateStorageKey);
+        if (stored === '1' || stored === '0') {
+          tocCollapsed = stored === '1';
+        } else {
+          tocCollapsed = window.innerHeight > window.innerWidth * 1.15;
+        }
+      } catch {}
+
+      setTocCollapsed(tocCollapsed);
+
+      if (tocToggle instanceof HTMLButtonElement) {
+        tocToggle.addEventListener('click', () => {
+          tocCollapsed = !tocCollapsed;
+          setTocCollapsed(tocCollapsed);
+          try {
+            window.localStorage.setItem(tocStateStorageKey, tocCollapsed ? '1' : '0');
+          } catch {}
+        });
+      }
+
+      const links = Array.from(tocRoot.querySelectorAll('a[href^="#"]'));
+      if (links.length === 0) return;
+
+      const headingEntries = links
+        .map(link => {
+          const id = decodeURIComponent(link.getAttribute('href')?.slice(1) ?? '');
+          if (!id) return null;
+          const heading = document.getElementById(id);
+          if (!heading) return null;
+          return { id, heading, link };
+        })
+        .filter(entry => entry !== null);
+
+      if (headingEntries.length === 0) return;
+
+      let activeId = '';
+      const setActive = id => {
+        if (!id || activeId === id) return;
+        activeId = id;
+        headingEntries.forEach(entry => {
+          entry.link.classList.toggle('is-active', entry.id === id);
+        });
+      };
+
+      const observer = new IntersectionObserver(
+        entries => {
+          const visible = entries
+            .filter(entry => entry.isIntersecting)
+            .sort((a, b) => a.boundingClientRect.top - b.boundingClientRect.top);
+          if (visible.length > 0) setActive(visible[0].target.id);
+        },
+        { rootMargin: '-18% 0px -70% 0px', threshold: [0, 1] },
+      );
+
+      headingEntries.forEach(entry => observer.observe(entry.heading));
+
+      const hashId = decodeURIComponent(window.location.hash.replace(/^#/, ''));
+      setActive(hashId || headingEntries[0].id);
+
+      window.addEventListener(
+        'hashchange',
+        () => {
+          const id = decodeURIComponent(window.location.hash.replace(/^#/, ''));
+          if (id) setActive(id);
+        },
+        { passive: true },
+      );
+    };
+
+    if (document.readyState === 'loading') {
+      document.addEventListener('DOMContentLoaded', initPostEnhancements, { once: true });
+    } else {
+      initPostEnhancements();
+    }
+    document.addEventListener('astro:page-load', initPostEnhancements);
+  })();
+</script>
+
 <style is:global>
-  .post {
-    max-width: 780px;
+  .post-shell {
+    max-width: 1160px;
     margin: 0 auto;
     padding: 0 24px 80px;
+  }
+
+  .post-shell.has-toc {
+    display: grid;
+    grid-template-columns: minmax(220px, 280px) minmax(0, 780px);
+    gap: 40px;
+    align-items: start;
+  }
+
+  .post-shell.has-toc.is-toc-collapsed {
+    grid-template-columns: 46px minmax(0, 780px);
+    gap: 24px;
+  }
+
+  .post-shell:not(.has-toc) .post {
+    max-width: 780px;
+    margin: 0 auto;
+  }
+
+  .post {
+    min-width: 0;
   }
 
   .post-hero {
@@ -168,9 +400,198 @@ const dateStr = date.toLocaleDateString('en-US', { year: 'numeric', month: 'long
     text-align: center;
   }
 
+  .post-toc {
+    position: sticky;
+    top: 88px;
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    background: var(--surface);
+    padding: 10px;
+    max-height: calc(100vh - 110px);
+    overflow-y: auto;
+    overflow-x: hidden;
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+    transition: padding 0.15s ease;
+  }
+
+  .post-toc .toc-collapse-toggle {
+    align-self: flex-start;
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    background: color-mix(in srgb, var(--bg) 70%, var(--surface));
+    color: var(--text-muted);
+    cursor: pointer;
+    font: inherit;
+    font-size: 0.76em;
+    font-weight: 600;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+    padding: 7px 10px;
+  }
+
+  .post-toc .toc-collapse-toggle:hover {
+    color: var(--text);
+    border-color: color-mix(in srgb, var(--accent) 40%, var(--border));
+  }
+
+  .post-toc .toc-collapse-toggle:focus-visible {
+    outline: 2px solid var(--accent);
+    outline-offset: 2px;
+  }
+
+  .post-toc .toc-toggle-icon {
+    font-size: 0.95em;
+    line-height: 1;
+  }
+
+  .post-toc .toc-content {
+    min-width: 0;
+  }
+
+  .post-toc .toc-title {
+    margin: 0 0 10px;
+    font-size: 0.75em;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    color: var(--text-muted);
+  }
+
+  .post-toc ul {
+    list-style: none;
+    margin: 0;
+    padding: 0;
+  }
+
+  .post-toc li {
+    margin: 0;
+  }
+
+  .post-toc a {
+    display: block;
+    padding: 7px 10px;
+    border-radius: 7px;
+    color: var(--text-muted);
+    text-decoration: none;
+    line-height: 1.3;
+    font-size: 0.9em;
+  }
+
+  .post-toc li.toc-depth-3 a {
+    padding-left: 22px;
+    font-size: 0.84em;
+  }
+
+  .post-toc a:hover,
+  .post-toc a.is-active {
+    color: var(--text);
+    background: color-mix(in srgb, var(--accent) 14%, transparent);
+  }
+
+  .post-shell.has-toc.is-toc-collapsed .post-toc {
+    padding: 8px;
+  }
+
+  .post-shell.has-toc.is-toc-collapsed .post-toc .toc-content {
+    display: none;
+  }
+
+  .post-shell.has-toc.is-toc-collapsed .post-toc .toc-collapse-toggle {
+    width: 100%;
+    justify-content: center;
+    padding: 8px 0;
+  }
+
+  .post-shell.has-toc.is-toc-collapsed .post-toc .toc-toggle-label {
+    display: none;
+  }
+
+  .post-body details.phase-section {
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    background: var(--surface);
+    margin: 28px 0;
+    overflow: hidden;
+  }
+
+  .post-body details.phase-section > summary.phase-summary {
+    list-style: none;
+    cursor: pointer;
+    padding: 14px 16px;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 14px;
+  }
+
+  .post-body details.phase-section > summary.phase-summary::marker {
+    content: '';
+  }
+
+  .post-body details.phase-section > summary.phase-summary::-webkit-details-marker {
+    display: none;
+  }
+
+  .post-body details.phase-section > summary.phase-summary::after {
+    content: '▸';
+    color: var(--accent);
+    transition: transform 0.15s ease;
+    font-size: 0.9em;
+  }
+
+  .post-body details.phase-section[open] > summary.phase-summary::after {
+    transform: rotate(90deg);
+  }
+
+  .post-body details.phase-section > summary.phase-summary > h2.phase-heading {
+    margin: 0 !important;
+    padding: 0 !important;
+    border: 0 !important;
+    font-size: 1.24em;
+    color: var(--text);
+  }
+
+  .post-body details.phase-section > summary.phase-summary > h2.phase-heading a {
+    color: inherit;
+    text-decoration: none;
+  }
+
+  .post-body details.phase-section > .phase-content {
+    border-top: 1px solid var(--border);
+    padding: 0 16px 16px;
+  }
+
+  .post-body details.phase-section > .phase-content > :first-child {
+    margin-top: 16px;
+  }
+
   /* Responsive */
+  @media (max-width: 1060px) {
+    .post-shell.has-toc {
+      display: block;
+    }
+
+    .post-toc {
+      display: none;
+    }
+  }
+
   @media (max-width: 600px) {
+    .post-shell {
+      padding: 0 16px 64px;
+    }
+
     .post-hero h1 { font-size: 1.6em; }
     .post-body pre { font-size: 0.8em; padding: 12px 14px; }
+    .post-body details.phase-section > summary {
+      padding: 12px 14px;
+    }
+    .post-body details.phase-section > .phase-content {
+      padding: 0 14px 14px;
+    }
   }
 </style>

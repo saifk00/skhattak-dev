@@ -1,17 +1,25 @@
 ---
 title: "Squeezing FLOPS out of a PlayStation Portable"
-subtitle: "Exploring the Allegrex CPU, hand-tuning scalar code, writing VFPU assembly, porting to Rust, and benchmarking IO — all in pursuit of running a neural network on 2005 hardware."
+subtitle: "Exploring the Allegrex CPU, hand-tuning scalar code, writing VFPU assembly, porting to Rust, and benchmarking IO — all in pursuit of running a neural network on the console of my youth."
 date: 2026-02-01
 tags: ["psp", "rust", "mips", "vfpu", "neural-networks", "embedded"]
+interactive:
+  toc: true
+  collapsiblePhases: true
 ---
 
-The Sony PSP shipped in 2004 with a 333 MHz MIPS core, 32 MB of RAM, and a curious co-processor called the VFPU. It was designed to push polygons for handheld gaming. I wanted to see if it could run a modern neural network.
+import CodeTabs from '../../../components/post/CodeTabs.astro';
+import Im2ColGeminiDemo from '../../../components/post/Im2ColGeminiDemo.tsx';
 
-This post walks through every phase of that exploration: getting code to run on the hardware, understanding the compiler output at an instruction level, exploiting the VFPU for matrix math, porting to Rust, benchmarking IO, recording audio from the built-in mic, and validating the whole pipeline against a real bird classification model.
+This project started with a simple question: can a 2004 handheld run modern ML inference?
+
+Not as a toy demo, but something actually useful - specifically [BirdNET](https://birdnet.cornell.edu/), for recognizing bird songs from the PSP's mic.
+
+This post is the full path from first `hello` all the way to "can this thing hear birds?": loading code on real hardware, reading MIPS output instruction-by-instruction, using the VFPU, porting to Rust, benchmarking IO, recording audio, and sanity-checking whether end-to-end inference is realistic.
 
 ## Phase 1: Hello World — Understanding the Hardware
 
-The first step was getting anything to run. The [pspdev](https://github.com/pspdev/pspdev) toolchain provides a full GCC cross-compiler targeting `mipsel-psp-elf`. On macOS, setup is straightforward:
+First step was getting anything to run on real hardware. The [pspdev](https://github.com/pspdev/pspdev) toolchain gives us a GCC cross-compiler targeting `mipsel-psp-elf`. On macOS:
 
 ```
 curl -L https://github.com/pspdev/pspdev/releases/latest/download/pspdev-macos-latest-arm64.tar.gz | tar xz
@@ -44,11 +52,17 @@ Simple enough. But what actually happens between `main()` and pixels on the LCD?
 
 ### The EBOOT.PBP Container
 
-The PSP doesn't run ELFs directly. The SDK wraps the ELF in an `EBOOT.PBP` container — a format designed for the XMB (the PSP's menu system). The build pipeline strips debug sections and symbol tables from the ELF to produce a `DATA.PSP`, then bundles it with metadata like `PARAM.SFO`.
+A container format that wraps an ELF with metadata for the XMB.
+
+The ELF and `DATA.PSP` inside the EBOOT are slightly different. PSPSDK has a `PSP_EBOOT` target that strips debug sections and symbol tables from the ELF.
 
 ### Linking and Relocation
 
-Looking at the relocatable object file, GCC puts our startup code in `.text.startup` rather than plain `.text`. This is a MIPS-specific optimization: since the Allegrex has a tiny 16 KiB instruction cache, isolating startup code in a separate section means it won't pollute the cache once we reach our hot path.
+A little compiler 101:
+
+- Generate an object file with ELF type `REL` (relocatable).
+- GCC puts startup code in `.text.startup` (not `.text`, surprisingly).
+- On this MIPS core that helps because the instruction cache is only 16 KiB; we keep startup noise away from hot code.
 
 Before linking, function calls look like this:
 
@@ -56,7 +70,7 @@ Before linking, function calls look like this:
 8:  0c000000    jal  0 <main>     ; jump to address 0 (!)
 ```
 
-A `jal 0` — jump and link to address zero. The compiler doesn't know the final address yet, so it writes a relocation entry:
+`jal 0` means jump to address 0. We haven't linked yet, so the compiler writes relocation info:
 
 ```
 Relocation section '.rel.text.startup':
@@ -64,15 +78,17 @@ Relocation section '.rel.text.startup':
 00000008  00001004 R_MIPS_26     pspDebugScreenInit
 ```
 
-This tells the linker: "8 bytes into `.text.startup`, patch the lower 26 bits with the address of `pspDebugScreenInit`." The upper 6 bits (the `JAL` opcode, `0x0C`) are preserved by the `R_MIPS_26` relocation type.
+8 bytes into `.text.startup`, patch the lower 26 bits with the target symbol address (`pspDebugScreenInit`), preserving the instruction bits (JAL opcode) via `R_MIPS_26`.
 
 ### Execution: No MMU, Just Load and Go
 
-The PSP has no MMU. Loading a program is quite literal: `sceKernelCreateThread` allocates a thread control block (TCB), `sceKernelStartThread` sets it to `READY` and configures arguments. Context switching is the tricky part — we need the very registers we're trying to save in order to execute the save code.
+The PSP has no MMU, so loading is pretty literal. `sceKernelCreateThread` allocates/initializes a TCB; `sceKernelStartThread` sets it `READY` and passes arguments.
+
+Context switching is the fun part: we know what we need to load into registers, but we also need registers to run the context-switch code.
 
 ### The Allegrex Instruction Cache
 
-Understanding cache geometry matters a lot on this CPU because it's so small. The Allegrex has a 16 KiB, 2-way set-associative instruction cache with 64-byte lines:
+Cache geometry really matters here because the CPU budget is tiny. Allegrex has a 16 KiB, 2-way set-associative I-cache with 64-byte lines:
 
 ```
 16 KiB / 64 B per line = 256 lines total
@@ -88,20 +104,22 @@ Each set has 2 lines scanned in parallel for tag match.
 Each line holds 16 instructions.
 ```
 
-With only 256 cache lines total, every instruction counts. This constraint drives all the optimization work that follows.
+Only 256 cache lines total, so every instruction matters.
 
 ### What Else Is Inside the Tachyon SoC
 
-The PSP's Tachyon chip packs more than just the Allegrex CPU:
+Tachyon has more than just Allegrex:
 
-- **VFPU (COP2)** — 128 32-bit registers, can do a full 4×4 matrix multiply in 22 cycles. This is the star of the show.
-- **Media Engine** — a second MIPS core dedicated to media encoding/decoding, not directly accessible to user code.
-- **VME** — a reconfigurable DSP of sorts. Apparently no one has been able to fully interpret its firmware.
-- **Graphics Engine** — communicates via MMIO registers at `0xBD400000`, driven by command packets (e.g., command `0x01` sets the vertex data start address).
+- **VFPU (COP2)** — 128 32-bit registers, ~22 cycles for a 4×4 matmul.
+- **Media Engine** — another MIPS core for media encoding/decoding (not directly accessible to us).
+- **VME** — kind of a mystery/reconfigurable DSP.
+- **Graphics Engine** — MMIO at `0xBD400000`, command-driven.
 
 ## Phase 2: Optimizing Scalar Matrix Multiply
 
-With a working dev environment, the real question is: how fast can we multiply matrices on this thing? Let's start with the obvious approach — a triple-nested loop in C.
+Now for the real question: how fast can we multiply matrices on this thing?
+
+Start with the obvious triple loop in C:
 
 ```c
 void mat_mul(const float *A, const float *B, float *C,
@@ -116,11 +134,20 @@ void mat_mul(const float *A, const float *B, float *C,
 }
 ```
 
-Compiled with `-O2`, this produces 172 bytes of MIPS assembly. Let's look at what GCC gives us and whether we can do better.
+Compiled with `-O2`, this comes out to 172 bytes of MIPS for `mat_mul`.
 
-### Reading the Assembly
+Here's the tight scalar loop and generated hot path side-by-side:
 
-The register allocation follows MIPS EABI conventions. Arguments arrive in `a0`–`a3` plus `t0` and `t1` for the 5th and 6th parameters. The hot inner loop is 7 instructions:
+<CodeTabs tabs={[{ id: 'c', label: 'C (inner loop)' }, { id: 'asm', label: 'MIPS ASM (hot path)' }]} label="Scalar loop and generated MIPS">
+  <div slot="c">
+
+```c
+for (int k = 0; k < K; k++)
+  sum += A[i*K + k] * B[k*N + j];
+```
+
+  </div>
+  <div slot="asm">
 
 ```asm
 34: lwc1   $f0, 0(v0)        ; load A[i*K + k]
@@ -132,13 +159,40 @@ The register allocation follows MIPS EABI conventions. Arguments arrive in `a0`�
 4c: add.s  $f1, $f1, $f0     ; (delay slot) sum += product
 ```
 
-That last instruction is in the *branch delay slot* — on MIPS, the instruction after a branch always executes, regardless of whether the branch is taken. GCC cleverly places the accumulation there, overlapping it with loop control for free.
+  </div>
+</CodeTabs>
+
+### Reading the Assembly
+
+Register allocation follows MIPS EABI conventions:
+
+```
+Arguments:
+  a0 = A (pointer to first matrix)
+  a1 = B (pointer to second matrix)
+  a2 = C (pointer to result matrix)
+  a3 = M (rows of A / rows of C)
+  t0 = N (cols of B / cols of C)     — 5th arg in register (EABI)
+  t1 = K (cols of A / rows of B)     — 6th arg in register (EABI)
+```
+
+That last `add.s` sits in the branch delay slot. On MIPS, the instruction after a branch always executes, so GCC gets accumulation + loop control overlap for free.
 
 ### Eliminating Dead Code with \_\_builtin\_unreachable
 
-Even at `-O2`, GCC generates some waste. There are early-exit checks for M ≤ 0 and N ≤ 0, plus a fallback loop that zero-fills C when K ≤ 0. We know our dimensions are always positive, so these paths are dead weight.
+Even at `-O2`, there are obvious inefficiencies:
 
-The zero-fill fallback is particularly wasteful. If the inner loop never runs because K ≤ 0, `sum` is still zero and needs to be stored. GCC synthesizes a 5-instruction loop guarded by a `bgtz` just to write zeros:
+- early exits for `M <= 0` and `N <= 0`
+- a zero-fill fallback path when `K <= 0`
+
+For this benchmark, all dims are positive, so those paths are dead weight.
+
+The zero-fill fallback is especially wasteful. If `K <= 0`, the inner loop never runs, but `sum` was initialized to `0.0f`, so GCC emits a whole loop to store zeros.
+
+We can tell GCC these branches are impossible via `__builtin_unreachable`:
+
+<CodeTabs tabs={[{ id: 'dead-asm', label: 'Dead fallback ASM' }, { id: 'hint-c', label: 'C hint' }]} label="Dead path removal">
+  <div slot="dead-asm">
 
 ```asm
 38: addiu  t4, t4, 1       ; j++
@@ -148,7 +202,8 @@ The zero-fill fallback is particularly wasteful. If the inner loop never runs be
 48: addiu  t3, t3, 4       ; (delay slot) advance C pointer
 ```
 
-We can tell GCC that these paths are impossible:
+  </div>
+  <div slot="hint-c">
 
 ```c
 if (M <= 0) __builtin_unreachable();
@@ -156,11 +211,24 @@ if (N <= 0) __builtin_unreachable();
 if (K <= 0) __builtin_unreachable();
 ```
 
+  </div>
+</CodeTabs>
+
 ### The Cascade Effect
 
-I expected removing 3 early-exit instructions and a 6-instruction zero-fill loop. But the savings cascaded further. The original code had two duplicate return blocks (the M and N exits jumped to different copies of `jr ra`), and a trampoline branch to handle the store after the last iteration of the inner loop. With the dead paths removed, the store falls through naturally.
+Expected savings:
 
-> **Result:** 3 + 6 + 2 + 1 = 12 instructions removed. 172 bytes → 124 bytes. The entire `mat_mul` now fits in **2 cache lines** instead of 3 — reducing cache pressure by 0.39% on a CPU that only has 256 lines to begin with.
+- 3 early-exit instructions
+- 6 instructions from guard + zero-fill loop
+
+Actual savings were bigger. We also lose:
+
+- 2 instructions from duplicated return blocks
+- 1 trampoline branch for final store
+
+Once dead paths are removed, the last store just falls through naturally.
+
+> **Result:** 3 + 6 + 2 + 1 = 12 instructions removed. 172 bytes → 124 bytes. `mat_mul` now fits in **2 cache lines** instead of 3 - wahoo.
 
 The original code layout had this structure:
 
@@ -197,21 +265,31 @@ After the optimization, it collapses to a clean linear flow:
 
 ### Why Not Unroll?
 
-Normally you'd consider unrolling a 7-instruction loop. But MIPS branching is cheap — the only penalty is the delay slot, and GCC already fills it productively. Unrolling would increase code size (more cache pressure) and register pressure, with no fused multiply-add to exploit (MIPS32 lacks `madd.s`, which only appears in MIPS IV). Not worth it on this hardware.
+Normally we'd consider unrolling a 7-instruction loop. Here it doesn't buy much:
+
+- branch overhead is minimal (delay slot already used productively)
+- MIPS32 has no `madd.s` (that shows up in later ISAs)
+- unrolling increases code size and register pressure
+
+Not worth it on this hardware.
 
 ## Phase 3: Unleashing the VFPU
 
-The VFPU is the PSP's secret weapon for number crunching. It has 128 32-bit floating-point registers organized as 8 primitive 4×4 matrices, and — crucially — a single instruction that performs a full 4×4 matrix multiply: `vmmul.q`.
+We squeezed out what we could from scalar code, so now we go VFPU.
 
 ### Register Architecture
 
-VFPU registers use a prefix-based naming scheme. The prefix indicates dimensionality: `S` for single, `R` for row vector, `C` for column vector, `M` for matrix. Instructions have a suffix indicating width: `.s` (scalar), `.p` (pair), `.t` (triple), `.q` (quad).
+VFPU has 128 32-bit registers, grouped as 8 primitive 4×4 matrices.
 
-A critical detail: sub-vectors and sub-matrices *never cross primitive matrix boundaries*. Addressing modes can alias the same physical register — for example, row vector `R000` and column vector `C000` share element `S000`. Some VFPU instructions require that input and output registers don't overlap in this way. The [pspdev VFPU docs](https://pspdev.github.io/vfpu-docs/docs.pdf) are an excellent reference.
+Important detail: sub-vectors/sub-matrices never cross primitive matrix boundaries. Addressing modes can alias the same physical registers, so some instructions require non-overlapping input/output regs.
+
+Instruction suffixes are `.s/.p/.t/.q`, register prefixes are `S/R/C/M`.
+
+Best reference is still the [pspdev VFPU docs](https://pspdev.github.io/vfpu-docs/docs.pdf).
 
 ### The Column-Major Surprise
 
-The SDK ships with `openTri`, which includes a `triMat4Mul` routine. Disassembling it revealed something puzzling:
+There are a few SDK options. `openTri` has `triMat4Mul`, and disassembling it is... weird:
 
 ```asm
 move   v0, a0            ; save output pointer
@@ -231,9 +309,9 @@ sv.q   C030, 48(a0)
 jr     ra
 ```
 
-It loads row-major C data into column vectors, reverses the multiplication order, then stores column data back as rows. Why all the gymnastics?
+It looks like row-major data is loaded as columns, order is reversed, then output is flipped back. Very convoluted.
 
-I initially thought this was wrong. I had Claude write a test harness that compiled an EBOOT.PBP and ran it in PPSSPP. The VFPU result came out transposed compared to the scalar version:
+I initially thought it was wrong and had Claude generate a PPSSPP test harness. The VFPU output looked transposed:
 
 ```
 Scalar:       VFPU (tri):
@@ -241,11 +319,13 @@ Scalar:       VFPU (tri):
 43  50        31  46
 ```
 
-Then it clicked: the **VFPU is natively column-major**. S₀₁ is one *row* below S₀₀, not one column to the right. But C arrays are row-major. The `openTri` code loads row-major data into column registers, effectively transposing on load, multiplies in transposed space, then transposes back on store. It's actually correct — just expensive if you include the transposes.
+Then it clicked: VFPU is naturally **column-major** (Sx01 is one row below Sx00), while C arrays are row-major.
+
+So the "gymnastics" are transpose-in, multiply, transpose-out. Correct, but expensive if you include transpose cost.
 
 ### A Direct Approach
 
-Instead of fighting the column-major convention, we can load data into row registers directly:
+Instead, we can just write inline asm that accepts normal C arrays:
 
 ```c
 void mat_mul_4x4_vfpu(float *C, const float *A, float *B) {
@@ -270,32 +350,38 @@ void mat_mul_4x4_vfpu(float *C, const float *A, float *B) {
 
 ### Profiling
 
-The PSP has hardware performance counters at `0xBC400000`, but PPSSPP doesn't implement the backing memory — attempting to use `pspDebugProfilerEnable` crashes the emulator with a segfault as the MMU page-faults on the unmapped address. Instead, I used `sceKernelGetSystemTimeLow` with 10,000 iterations:
+PSP has profiler registers at `0xBC400000`, but PPSSPP doesn't back them. Trying `pspDebugProfilerEnable` segfaults because that mapped address isn't actually allocated.
+
+So in emulator I used `sceKernelGetSystemTimeLow` over 10,000 iterations:
 
 | Implementation | Emulator (PPSSPP) | Real PSP |
 |---|---|---|
 | Scalar 4×4 | 28,440 μs | 48,024 μs |
-| VFPU (openTri, pre-transposed) | 16,877 μs | — |
+| VFPU (openTri, includes transpose work) | 16,877 μs | — |
 | VFPU (inline asm) | 1,307 μs | 2,853 μs |
 
-Our inline assembly is nearly **12× faster** than the `openTri` implementation when transposes are included. Once you factor out the transpose overhead, both VFPU paths converge to roughly the same speed — about 1,300 μs for 10,000 calls in the emulator.
+Our inline asm is almost **12× faster** than `openTri` when `openTri` includes transpose work (16,877 μs). If we move transpose work outside the benchmark loop, both converge around ~1,300 μs for 10,000 calls in emulation.
 
 ### Sanity-Checking the Numbers
 
-The `vmmul.q` instruction has a throughput of 16 cycles and a latency of 22 cycles. Our full operation is 8 loads + 1 vmmul (22 cycles) + 4 stores + ~3 cycles loop overhead ≈ 37 cycles minimum per multiply. The Allegrex runs at 333 MHz:
+Quick sanity check:
+
+- `vmmul.q` throughput ~16 cycles, latency ~22 cycles
+- lower bound is roughly 8 loads + vmmul latency + 4 stores + loop overhead ≈ 37 cycles/op
+- Allegrex is 333 MHz
 
 ```
 1,300 μs × 333 cycles/μs = 432k cycles
 432k / 10k iterations   = 43.2 cycles/iteration
 ```
 
-That's about 14% overhead beyond the theoretical minimum — reasonable for emulation.
+That lands near ~14% overhead, which is plausible for emulation.
 
-> **Real hardware is different.** On the actual PSP, the VFPU speedup over scalar is 16.8× compared to 21.7× in the emulator. The emulator likely implements VFPU operations more efficiently on modern hardware, without the real register overlap constraints.
+> **Real hardware is different.** Scalar→VFPU speedup is 21.7× in emulator vs 16.8× on PSP. Makes sense: emulator can implement VFPU ops on modern CPUs without all real hardware constraints.
 
 ### Enabling the VFPU for PRX Modules
 
-One gotcha when running via PSPLINK: the VFPU must be explicitly enabled via a thread attribute. Without `THREAD_ATTR_VFPU`, attempting any VFPU instruction triggers a "Coprocessor unusable" exception:
+One gotcha with PSPLINK: VFPU must be explicitly enabled via thread attributes. Without `THREAD_ATTR_VFPU`, first VFPU instruction throws "Coprocessor unusable":
 
 ```
 Exception - Coprocessor unusable
@@ -304,7 +390,7 @@ EPC       - 0x08806B48
 Cause     - 0x2000002C
 ```
 
-The `EPC` (Exception Program Counter) points to the faulting instruction. Cross-referencing with the disassembly at the corresponding PRX offset confirms it's the first `lv.q` instruction. The fix is a single flag:
+`EPC` points to the faulting instruction; disassembly confirms it's the first `lv.q`. Fix is one flag:
 
 ```c
 PSP_MAIN_THREAD_ATTR(THREAD_ATTR_USER | THREAD_ATTR_VFPU);
@@ -312,11 +398,11 @@ PSP_MAIN_THREAD_ATTR(THREAD_ATTR_USER | THREAD_ATTR_VFPU);
 
 ## Phase 4: Porting to Rust and Measuring IO
 
-With the C implementation validated, I wanted to see if Rust could target the PSP too. The [cargo-psp](https://github.com/overdrivenpotato/rust-psp) project makes this possible, compiling for the `mipsel-sony-psp` target.
+With C side validated, I moved to Rust via [cargo-psp](https://github.com/overdrivenpotato/rust-psp).
 
 ### How cargo-psp Works
 
-The build pipeline mirrors what the C toolchain does, but through Rust's build infrastructure:
+At a high level, `cargo-psp` does:
 
 ```
 cargo build \
@@ -325,13 +411,13 @@ cargo build \
   --message-format=json-render-diagnostics
 ```
 
-After compilation, `cargo-psp` runs the same post-processing: `prxgen` to convert ELF → PRX, `MKSFO` for metadata, and `pbp-pack` to produce the final `EBOOT.PBP`.
+Then fixups/import handling, `prxgen` (ELF→PRX), `MKSFO`, then `pbp-pack` to make `EBOOT.PBP`.
 
 ### The PSP's Dynamic Linking Model
 
-One fascinating detail that becomes very visible when working with `cargo-psp` is how the PSP resolves system calls. Unlike a typical OS where libc wraps syscalls, the PSP patches them at load time. When your code calls `sceDisplayWaitVblankStart`, the compiler emits a jump to a stub, and the actual syscall number gets patched in by the firmware loader.
+PSP syscall loading is beautifully weird. You call `sceDisplayWaitVblankStart`, but linked PRX still has unresolved stubs; firmware patches syscall targets at load time.
 
-The PRX contains four special sections that the kernel uses for this:
+The kernel uses four sections for this:
 
 ```
 // 1. Library names
@@ -347,7 +433,7 @@ The PRX contains four special sections that the kernel uses for this:
 .lib.stub             → { name, nid_table, stub_table, count }
 ```
 
-The kernel walks `.lib.stub`, resolves each library name, looks up the NIDs, and patches the corresponding stubs with the correct syscall numbers. Your code only includes stubs for functions it actually calls, and the kernel only loads what's needed.
+Kernel walks `.lib.stub`, resolves library names/NIDs, and patches stubs. So you only ship stubs for functions you actually call.
 
 ```
 .text                          .sceStub.text
@@ -362,7 +448,7 @@ jal 0xf1f8  ──────────────────►  [placehol
 
 ### VFPU in Rust
 
-The Rust version uses the `vfpu_asm!` macro (nightly-only, requires `#![feature(asm_experimental_arch)]`) and looks nearly identical to the C inline assembly:
+Rust version uses `vfpu_asm!` (nightly + `#![feature(asm_experimental_arch)]`) and looks basically the same as C inline asm.
 
 ```rust
 unsafe {
@@ -390,18 +476,20 @@ unsafe {
 
 ### IO Benchmarks: How Fast Can We Feed the Beast?
 
-For neural network inference, we need to load model weights into RAM. The PSP's primary data path during development is USB via PSPLINK, which exposes a virtual filesystem (`host0:`) backed by the `usbhostfs` driver.
+IO matters a lot here; we're moving a lot of data relative to PSP memory/bandwidth.
 
-The PSP's IO stack goes through `IoFileMgrForUser`, which parses the device prefix (`ms0:` for Memory Stick, `host0:` for USB, etc.) and forwards to the appropriate driver. The USB driver uses bulk transfers with a maximum block size of 64 KiB for reads:
+During development, primary path is PSPLINK over USB (`host0:` via `usbhostfs`).
+
+`IoFileMgrForUser` parses path prefixes (`ms0:`, `host0:`, etc.) and forwards to the right driver. `usbhostfs` read block max is 64 KiB:
 
 ```c
 #define HOSTFS_MAX_BLOCK   (64*1024)     // max read block
 #define HOSTFS_BULK_MAXWRITE (1024*1024)  // max write block
 ```
 
-Before each DMA transfer, the driver calls `sceKernelDcacheWritebackRange` to flush dirty cache lines — otherwise the DMA hardware might read stale data from main memory.
+Before DMA, driver calls `sceKernelDcacheWritebackRange` so USB doesn't read stale dirty-cache data.
 
-Benchmarking 4 MiB transfers in 64 KiB blocks on real hardware:
+Benchmarking 4 MiB transfers (64 KiB blocks) on real hardware:
 
 | Direction | Bandwidth | Time (4 MiB) |
 |---|---|---|
@@ -410,7 +498,7 @@ Benchmarking 4 MiB transfers in 64 KiB blocks on real hardware:
 
 ### Can We Actually Run a Neural Network?
 
-Let's do the math for [BirdNET v2.4](https://birdnet-team.github.io/BirdNET-Analyzer/models.html), a bird species classification model:
+With an eye to [BirdNET v2.4](https://birdnet-team.github.io/BirdNET-Analyzer/models.html), let's do the math:
 
 | Parameter | Value |
 |---|---|
@@ -421,13 +509,19 @@ Let's do the math for [BirdNET v2.4](https://birdnet-team.github.io/BirdNET-Anal
 | Inference time (estimate) | ~2.37 s |
 | RAM remaining after model | ~16 MB |
 
-That throughput estimate comes from our benchmark: 10,000 4×4 matmuls, each consisting of 64 multiplies + 48 adds = 112 FLOPs, totaling 1.12 MFLOP completed in 3,218 μs — about 348 MFLOP/s.
+Throughput estimate comes from what I measured on PSP with 10,000 4×4 matmuls: each is 64 multiplies + 48 adds = 112 FLOPs, giving ~348 MFLOP/s.
 
-> **Verdict:** ~5 seconds from cold start to first inference. That's tight but workable. And there's headroom — 348 MFLOP/s is well below the VFPU's theoretical peak of 3.2 GFLOP/s. With better data tiling, double-buffered loads, and careful use of the VFPU's 8 matrix registers, we should be able to push significantly harder.
+> **Verdict:** ~5s from cold start to first inference. Tight, but workable.
+>
+> Also, 0.348 GFLOP/s is far below the VFPU's 3.2 GFLOP/s theoretical peak. There's headroom if we're clever.
 
 ## Phase 5: Recording Audio on the PSP
 
-If we're going to classify birdsong, we need microphone access. The PSP has a built-in mic, but the homebrew landscape for audio recording is sparse. The only existing tool I found was [PSP Audio Recorder](https://www.gamebrew.org/wiki/PSP_Audio_Recorder) from 2006, which runs as a kernel module — making it impossible to load over PSPLINK during development. I decided to write a new recorder from scratch in Rust.
+To record bird sounds, we need mic access.
+
+I wanted to prototype whether PSP audio quality is good enough for birdnet via https://birdnet.cornell.edu/demo/, but the only recorder homebrew I found was [PSP Audio Recorder](https://www.gamebrew.org/wiki/PSP_Audio_Recorder) (2006), and it runs as a kernel module, which is cumbersome (can't run it over psplink, for example).
+
+So I rewrote a similar recorder in Rust.
 
 ### The Kernel Module Problem
 
@@ -446,11 +540,13 @@ int main_thread(SceSize args, void *argp) {
 }
 ```
 
-This requires kernel-level privileges, custom firmware patches, and a separate PRX build — far too cumbersome for iterative development. The good news: `sceAudioInputBlocking` actually works in user mode on modern custom firmware, so we can skip all of that.
+That flow needs kernel privileges, CFW patch calls, and a separate PRX. Bad dev loop.
+
+Good news: `sceAudioInputBlocking` works fine in user mode on modern CFW, so we can skip the kernel-module path.
 
 ### A User-Mode Recorder in Rust
 
-The Rust implementation is straightforward. We use `sceAudioInputInit` to set up the mic, then call `sceAudioInputBlocking` in a loop to fill 1024-sample buffers at 44.1 kHz, 16-bit mono:
+Rust implementation is straightforward: `sceAudioInputInit`, then `sceAudioInputBlocking` in a loop with 1024-sample chunks at 44.1 kHz, 16-bit mono:
 
 ```rust
 fn record_chunk(&mut self) {
@@ -466,11 +562,17 @@ fn record_chunk(&mut self) {
 }
 ```
 
-Samples are collected into a `Vec<i16>` (we get an allocator via `extern crate alloc`), then written out as a WAV file with a manually constructed 44-byte header. The WAV format is simple enough to build by hand — just RIFF/WAVE container metadata followed by raw PCM data.
+Samples go into `Vec<i16>` (`extern crate alloc`), then we write WAV with a manual 44-byte header (RIFF/WAVE + PCM payload).
 
 ### Offline-First Design
 
-An interesting design constraint: the PSP might not always be tethered to a PC via USB. The recorder handles this with a two-tier storage strategy. When `host0:` is available (connected via PSPLINK), recordings save directly to the host PC. When it's not, they cache to the Memory Stick at `ms0:/PSP/MUSIC/AUDREC/`. On next connection, the app detects cached recordings and offers to upload them.
+Practical design constraint: PSP won't always be tethered over USB.
+
+So recorder is offline-first:
+
+- if `host0:` is available, write WAV directly to host
+- otherwise cache to `ms0:/PSP/MUSIC/AUDREC/`
+- next time USB is connected, upload cached recordings
 
 We detect connectivity by attempting to open `host0:/` as a directory — if `sceIoDopen` returns a non-negative file descriptor, we're connected:
 
@@ -486,21 +588,21 @@ fn is_host0_available() -> bool {
 
 ## Phase 6: Can the PSP's Mic Hear Birds?
 
-Before building an entire on-device inference engine, there's a fundamental question: is the PSP's microphone even good enough to capture birdsong at a quality that BirdNET can recognize? The mic was designed for voice chat in games, not field recording.
+Before writing the whole inference stack, first question was simple: is PSP mic quality even good enough for BirdNET?
 
-I recorded a few clips from my living room — birds singing outside, not particularly close — and uploaded them to [birdnet.cornell.edu/demo](https://birdnet.cornell.edu/demo/).
+I recorded a few bird songs from my living room (they're pretty far away) and uploaded them to [birdnet.cornell.edu/demo](https://birdnet.cornell.edu/demo/).
 
-It worked. BirdNET identified a Dark-eyed Junco (*Junco hyemalis*) from a PSP recording. The spectrogram showed clean frequency content in the relevant bands despite the consumer-grade hardware.
+It worked. BirdNET picked up a Dark-eyed Junco (*Junco hyemalis*) from a PSP recording.
 
-> **Validation:** The PSP's built-in microphone produces audio of sufficient quality for neural network-based bird species classification. This confirms the end-to-end pipeline is feasible — the remaining work is purely computational.
+> **Validation:** PSP mic quality is good enough for bird-song recognition. End-to-end is feasible; the rest is engineering.
 
 ## Phase 7: Error Handling in `no_std` Rust
 
-As the codebase grew, debugging became painful. PSP syscalls return errors as negative `i32` values — for example, opening a non-existent file returns `-2147418110`. Not exactly self-documenting.
+As the codebase grew, debugging got painful. PSP syscalls return negative `i32` values like `-2147418110`, which is not super readable.
 
 ### PSP Error Code Anatomy
 
-PSP error codes follow the format `0x8XYYNNNN`, where different prefixes indicate the subsystem:
+PSP error codes follow `0x8XYYNNNN`:
 
 | Prefix | Category |
 |---|---|
@@ -509,11 +611,11 @@ PSP error codes follow the format `0x8XYYNNNN`, where different prefixes indicat
 | `0x8002XXXX` | Kernel errors |
 | `0x8021XXXX` | UMD errors |
 
-The `0x8001XXXX` range is particularly useful — the lower 16 bits map directly to POSIX errno values: `0x80010002` is `ENOENT` (errno 2, "No such file or directory"), `0x8001000D` is `EACCES` (errno 13, "Permission denied"), and so on.
+`0x8001XXXX` maps directly to POSIX errno values (`0x80010002` = ENOENT, `0x8001000D` = EACCES, etc.).
 
 ### Why Not Just Use `strerror()`?
 
-My first instinct was to call newlib's `strerror()` via FFI:
+First instinct was to call newlib `strerror()` via FFI:
 
 ```rust
 #[link(name = "c")]
@@ -522,11 +624,18 @@ extern "C" {
 }
 ```
 
-This doesn't work. `rust-psp` is a pure `no_std` environment that doesn't link against newlib. When I tried to force-link PSP's `libc.a`, the linker couldn't find it without an explicit search path, and once found, it produced ABI errors (`symbol has invalid binding: 0`). The PSP SDK's libc was compiled with `psp-gcc` using a slightly different MIPS ABI than what `rust-lld` expects. Fixing this would mean invasive changes to `rust-psp`'s build system — not worth it for error strings.
+Doesn't work. `rust-psp` is pure `no_std` and doesn't link newlib/libc.
+
+When force-linking `libc.a`:
+
+1. linker couldn't find it without explicit search path
+2. once found, ABI/binding errors showed up (`symbol has invalid binding: 0`)
+
+So practically: not worth invasive rust-psp build changes just for error strings.
 
 ### A Manual Lookup Table
 
-The practical solution is a simple match table:
+Practical solution is a manual lookup table:
 
 ```rust
 fn psp_strerror(code: i32) -> &'static str {
@@ -545,7 +654,7 @@ fn psp_strerror(code: i32) -> &'static str {
 }
 ```
 
-The fallback arm uses a masked match on the upper 16 bits to at least categorize unknown errors by subsystem. This works in `no_std` with zero external dependencies, and could be contributed upstream to `rust-psp` as a `psp::error` module.
+Fallback masks upper 16 bits so unknown codes are still categorized by subsystem. Works in `no_std` with zero dependencies.
 
 ```
 // Before:
@@ -557,13 +666,26 @@ dprintln!("Error: {:#010x} {}", fd.0 as u32, psp_strerror(fd.0));
 //   Error: 0x80010002 ENOENT: No such file or directory
 ```
 
+## Appendix: im2col Visualization
+
+I had Gemini sketch an im2col visualizer, so I cleaned it up and embedded it here as an appendix.
+
+Use the mode switch to compare direct convolution vs im2col/GEMM form, then step through the 16 positions.
+
+<Im2ColGeminiDemo client:visible />
+
 ## What I Learned
 
-Working on a system with no MMU, 256 instruction cache lines, and a 333 MHz clock forces you to think about every instruction. The PSP is a surprisingly well-designed piece of silicon — the VFPU alone provides a 17× speedup over scalar code on real hardware, and the architecture rewards careful attention to cache geometry and register layout.
+Main takeaways:
 
-The journey from "Hello from PSP!" to recording birdsong and validating neural network feasibility touched on compiler internals (relocation tables, CRT startup code), CPU microarchitecture (cache line budgets, branch delay slots), coprocessor programming (VFPU register aliasing, column-major conventions), systems programming (PRX loading, syscall patching, DMA cache coherency), audio capture (rewriting a kernel module as a user-mode Rust app), and the realities of `no_std` Rust on exotic hardware (no libc linking, manual error tables, ABI mismatches between `psp-gcc` and `rust-lld`).
+- constraints breed creativity (`64MB` RAM, `333MHz`, 4×4 VFPU model)
+- old hardware + modern compiler thinking actually works
+- incremental de-risking was huge (audio validation before full inference work)
+- rabbit holes were half the fun (NIDs, CRT/linking, VFPU quirks, PSP IO stack)
 
-The most satisfying moment: uploading a WAV file recorded on 2005 hardware to a 2024 neural network demo and watching it identify a Dark-eyed Junco. The PSP's mic works, the VFPU has headroom, and the IO budget is tight but feasible. Next step: build the actual on-device inference engine.
+The most satisfying moment was uploading a WAV recorded on 2005 hardware and seeing BirdNET identify the bird.
+
+The PSP mic works, the VFPU has headroom, and the IO budget is tight but feasible. Next step is obvious: build the full on-device inference runtime.
 
 ---
 

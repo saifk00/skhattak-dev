@@ -1,0 +1,170 @@
+---
+interface TabOption {
+  id: string;
+  label: string;
+}
+
+interface Props {
+  tabs: TabOption[];
+  label?: string;
+}
+
+const { tabs, label = 'Code variants' } = Astro.props;
+const tabContents = await Promise.all(
+  tabs.map(async tab => ({
+    ...tab,
+    content: await Astro.slots.render(tab.id),
+  })),
+);
+---
+<div class="code-tabs" data-code-tabs>
+  <div class="code-tab-list" role="tablist" aria-label={label}>
+    {tabContents.map((tab, index) => (
+      <button
+        type="button"
+        role="tab"
+        data-tab-id={tab.id}
+        aria-selected={index === 0 ? 'true' : 'false'}
+        tabindex={index === 0 ? '0' : '-1'}
+      >
+        {tab.label}
+      </button>
+    ))}
+  </div>
+  {tabContents.map((tab, index) => (
+    <section
+      role="tabpanel"
+      data-tab-panel={tab.id}
+      hidden={index !== 0}
+      set:html={tab.content}
+    />
+  ))}
+</div>
+
+<script is:inline>
+  (() => {
+    const initCodeTabs = () => {
+      const groups = document.querySelectorAll('[data-code-tabs]');
+
+      groups.forEach((group, groupIndex) => {
+        if (!(group instanceof HTMLElement)) return;
+        if (group.dataset.ready === 'true') return;
+        group.dataset.ready = 'true';
+
+        const tabs = Array.from(group.querySelectorAll('[data-tab-id]'));
+        const panels = Array.from(group.querySelectorAll('[data-tab-panel]'));
+        if (tabs.length === 0 || panels.length === 0) return;
+
+        const activate = selectedTab => {
+          const selectedId = selectedTab.getAttribute('data-tab-id');
+          if (!selectedId) return;
+
+          tabs.forEach((tab, tabIndex) => {
+            const isActive = tab === selectedTab;
+            tab.setAttribute('aria-selected', isActive ? 'true' : 'false');
+            tab.tabIndex = isActive ? 0 : -1;
+
+            const panel = panels[tabIndex];
+            if (!(panel instanceof HTMLElement)) return;
+            panel.hidden = panel.getAttribute('data-tab-panel') !== selectedId;
+          });
+        };
+
+        tabs.forEach((tab, tabIndex) => {
+          if (!(tab instanceof HTMLButtonElement)) return;
+          const panel = panels[tabIndex];
+          if (!(panel instanceof HTMLElement)) return;
+
+          const tabId = `code-tab-${groupIndex}-${tabIndex}`;
+          const panelId = `code-panel-${groupIndex}-${tabIndex}`;
+
+          tab.id = tabId;
+          tab.setAttribute('aria-controls', panelId);
+          panel.id = panelId;
+          panel.setAttribute('aria-labelledby', tabId);
+
+          tab.addEventListener('click', () => activate(tab));
+        });
+
+        group.addEventListener('keydown', event => {
+          const activeElement = document.activeElement;
+          if (!(activeElement instanceof HTMLButtonElement)) return;
+          const currentIndex = tabs.indexOf(activeElement);
+          if (currentIndex < 0) return;
+
+          let nextIndex = currentIndex;
+          if (event.key === 'ArrowRight') {
+            nextIndex = (currentIndex + 1) % tabs.length;
+          } else if (event.key === 'ArrowLeft') {
+            nextIndex = (currentIndex - 1 + tabs.length) % tabs.length;
+          } else {
+            return;
+          }
+
+          event.preventDefault();
+          const nextTab = tabs[nextIndex];
+          if (!(nextTab instanceof HTMLButtonElement)) return;
+          activate(nextTab);
+          nextTab.focus();
+        });
+      });
+    };
+
+    if (document.readyState === 'loading') {
+      document.addEventListener('DOMContentLoaded', initCodeTabs, { once: true });
+    } else {
+      initCodeTabs();
+    }
+    document.addEventListener('astro:page-load', initCodeTabs);
+  })();
+</script>
+
+<style>
+  .code-tabs {
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    overflow: hidden;
+    background: var(--surface);
+    margin: 18px 0 22px;
+  }
+
+  .code-tab-list {
+    display: flex;
+    gap: 8px;
+    flex-wrap: wrap;
+    border-bottom: 1px solid var(--border);
+    padding: 8px;
+    background: color-mix(in srgb, var(--bg) 75%, var(--surface));
+  }
+
+  .code-tab-list [role='tab'] {
+    border: 1px solid transparent;
+    border-radius: 8px;
+    background: transparent;
+    color: var(--text-muted);
+    font: inherit;
+    font-size: 0.84em;
+    font-weight: 600;
+    padding: 6px 10px;
+    cursor: pointer;
+    letter-spacing: 0.02em;
+  }
+
+  .code-tab-list [role='tab'][aria-selected='true'] {
+    color: var(--text);
+    background: color-mix(in srgb, var(--accent) 15%, transparent);
+    border-color: color-mix(in srgb, var(--accent) 30%, var(--border));
+  }
+
+  .code-tab-list [role='tab']:focus-visible {
+    outline: 2px solid var(--accent);
+    outline-offset: 2px;
+  }
+
+  [role='tabpanel'] :global(pre) {
+    margin: 0;
+    border: 0;
+    border-radius: 0;
+    background: transparent;
+  }
+</style>
