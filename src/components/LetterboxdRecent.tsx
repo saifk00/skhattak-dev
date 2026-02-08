@@ -167,12 +167,13 @@ export default function LetterboxdRecent() {
                 setActiveReviewLink(current => (current === item.link ? null : current))
               }
               style={{
-                border: '1px solid var(--border)',
+                border: '1px solid var(--border-soft)',
                 borderRadius: '10px',
                 overflow: 'hidden',
                 textDecoration: 'none',
                 color: 'var(--text)',
-                background: 'var(--surface)',
+                background:
+                  'linear-gradient(180deg, rgba(15, 22, 35, 0.95), rgba(11, 17, 29, 0.95))',
                 display: 'block',
               }}
             >
@@ -205,7 +206,7 @@ export default function LetterboxdRecent() {
                     style={{
                       position: 'absolute',
                       inset: 0,
-                      background: 'rgba(3, 10, 20, 0.92)',
+                      background: 'rgba(5, 11, 20, 0.94)',
                       color: '#d9e4f7',
                       padding: '10px',
                       fontSize: '0.76em',
@@ -247,7 +248,7 @@ export default function LetterboxdRecent() {
                 <p
                   style={{
                     fontSize: '0.74em',
-                    color: 'var(--text-muted)',
+                    color: 'var(--text-faint)',
                     margin: '4px 0 0',
                   }}
                 >
@@ -262,7 +263,7 @@ export default function LetterboxdRecent() {
   }, [items, isLoading, error, activeReviewLink, columns]);
 
   return (
-    <section ref={sectionRef} style={{ marginTop: '36px', paddingBottom: '70px' }}>
+    <section ref={sectionRef} style={{ marginTop: '8px', paddingBottom: '24px' }}>
       <div
         style={{
           display: 'flex',
@@ -275,11 +276,12 @@ export default function LetterboxdRecent() {
       >
         <h2
           style={{
-            fontSize: '1em',
+            fontSize: '0.78em',
+            fontFamily: 'var(--font-mono)',
             fontWeight: 600,
-            color: 'var(--text-muted)',
+            color: 'var(--gold)',
             textTransform: 'uppercase',
-            letterSpacing: '0.05em',
+            letterSpacing: '0.1em',
             margin: 0,
           }}
         >
@@ -289,7 +291,13 @@ export default function LetterboxdRecent() {
           href="https://letterboxd.com/xiphosen/"
           target="_blank"
           rel="noopener noreferrer"
-          style={{ fontSize: '0.88em', color: 'var(--accent)' }}
+          style={{
+            fontSize: '0.75em',
+            fontFamily: 'var(--font-mono)',
+            letterSpacing: '0.06em',
+            textTransform: 'uppercase',
+            color: 'var(--accent)',
+          }}
         >
           letterboxd.com/xiphosen
         </a>

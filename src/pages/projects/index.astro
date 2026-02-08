@@ -13,12 +13,14 @@ const projects = (await getCollection('projects'))
 ---
 <Base title="Projects - Saif Khattak">
   <main class="listing-page">
-    <h1>projects</h1>
-    <p class="intro">
-      Personal and academic work across systems programming, graphics, emulation,
-      signal processing, and astronomy imaging.
-    </p>
-    <ul>
+    <header class="page-head">
+      <h1>projects</h1>
+      <p class="intro">
+        Personal and academic work across systems programming, graphics, emulation,
+        signal processing, and astronomy imaging.
+      </p>
+    </header>
+    <ul class="project-list">
       {projects.map(project => {
         const slug = project.id.includes('/') ? project.id.split('/')[0] : project.id;
         return (
@@ -44,58 +46,82 @@ const projects = (await getCollection('projects'))
 
 <style>
   .listing-page {
-    max-width: 780px;
+    max-width: 1060px;
     margin: 0 auto;
-    padding: 60px 24px 80px;
+    padding: 24px 24px 80px;
+    display: grid;
+    gap: 16px;
   }
 
-  .listing-page h1 {
-    font-size: 1.8em;
-    font-weight: 700;
-    margin-bottom: 10px;
+  .page-head {
+    border: 1px solid var(--border);
+    border-radius: var(--radius-lg);
+    background: linear-gradient(180deg, rgba(17, 24, 37, 0.9), rgba(12, 18, 29, 0.93));
+    box-shadow: var(--shadow-panel);
+    padding: 20px;
   }
 
-  .listing-page .intro {
+  .page-head h1 {
+    font-size: clamp(1.6rem, 3.8vw, 2.2rem);
+    margin-bottom: 8px;
+  }
+
+  .page-head .intro {
     color: var(--text-muted);
-    margin-bottom: 24px;
     max-width: 620px;
   }
 
-  .listing-page ul {
+  .project-list {
     list-style: none;
+    border: 1px solid var(--border);
+    border-radius: var(--radius-lg);
+    overflow: hidden;
+    background: linear-gradient(180deg, rgba(13, 19, 31, 0.93), rgba(10, 15, 25, 0.93));
+    box-shadow: var(--shadow-panel);
   }
 
-  .listing-page li {
-    border-bottom: 1px solid var(--border);
-    padding: 16px 0;
+  .project-list li {
+    border-bottom: 1px solid var(--border-soft);
+    padding: 16px 18px;
   }
 
-  .listing-page a {
+  .project-list li:last-child {
+    border-bottom: 0;
+  }
+
+  .project-list a {
     display: flex;
     justify-content: space-between;
     gap: 16px;
     color: var(--text);
     text-decoration: none;
-    transition: color 0.15s;
+    transition: color 0.15s ease;
   }
 
-  .listing-page a:hover {
-    color: var(--accent);
+  .project-list a:hover {
+    color: #f2f7ff;
   }
 
-  .listing-page .item-title {
+  .project-list .item-title {
     font-weight: 500;
   }
 
-  .listing-page .item-date {
+  .project-list .item-date {
     color: var(--text-muted);
-    font-size: 0.85em;
+    font-size: 0.76rem;
+    font-family: var(--font-mono);
     white-space: nowrap;
   }
 
-  .listing-page .item-subtitle {
+  .project-list .item-subtitle {
     color: var(--text-muted);
     margin-top: 6px;
     font-size: 0.95em;
+  }
+
+  @media (max-width: 720px) {
+    .listing-page {
+      padding: 16px 12px 60px;
+    }
   }
 </style>

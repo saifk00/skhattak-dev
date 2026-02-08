@@ -236,143 +236,165 @@ const showToc = tocHeadings.length > 0;
 
 <style is:global>
   .post-shell {
-    max-width: 1160px;
+    max-width: 1060px;
     margin: 0 auto;
-    padding: 0 24px 80px;
+    padding: 18px 24px 80px;
   }
 
   .post-shell.has-toc {
     display: grid;
-    grid-template-columns: minmax(220px, 280px) minmax(0, 780px);
-    gap: 40px;
+    grid-template-columns: minmax(220px, 260px) minmax(0, 1fr);
+    gap: 16px;
     align-items: start;
   }
 
   .post-shell.has-toc.is-toc-collapsed {
-    grid-template-columns: 46px minmax(0, 780px);
-    gap: 24px;
+    grid-template-columns: 0 minmax(0, 1fr);
+    gap: 0;
   }
 
   .post-shell:not(.has-toc) .post {
-    max-width: 780px;
+    max-width: 920px;
     margin: 0 auto;
   }
 
   .post {
     min-width: 0;
+    border: 1px solid var(--border);
+    border-radius: var(--radius-lg);
+    background: linear-gradient(180deg, rgba(17, 24, 38, 0.94), rgba(12, 17, 29, 0.95));
+    box-shadow: var(--shadow-panel);
+    overflow: hidden;
   }
 
   .post-hero {
-    text-align: center;
-    padding: 60px 0 40px;
-    border-bottom: 1px solid var(--border);
-    margin-bottom: 48px;
+    text-align: left;
+    padding: 30px 28px 22px;
+    border-bottom: 1px solid var(--border-soft);
+    margin-bottom: 0;
   }
+
   .post-hero h1 {
-    font-size: 2.2em;
+    font-size: clamp(1.65rem, 4.2vw, 2.45rem);
     font-weight: 700;
-    line-height: 1.25;
-    margin-bottom: 16px;
-    background: linear-gradient(135deg, var(--accent), var(--green));
-    -webkit-background-clip: text;
-    -webkit-text-fill-color: transparent;
-    background-clip: text;
+    line-height: 1.14;
+    margin-bottom: 10px;
+    color: #eff5ff;
+    text-wrap: balance;
   }
+
   .post-hero .subtitle {
     color: var(--text-muted);
-    font-size: 1.1em;
-    max-width: 600px;
-    margin: 0 auto;
-  }
-  .post-hero .meta {
-    margin-top: 20px;
-    color: var(--text-muted);
-    font-size: 0.85em;
+    font-size: 1.02rem;
+    max-width: 72ch;
   }
 
-  /* Prose */
-  .post-body p { margin: 12px 0; }
+  .post-hero .meta {
+    margin-top: 14px;
+    color: var(--text-faint);
+    font-size: 0.75rem;
+    letter-spacing: 0.03em;
+    font-family: var(--font-mono);
+  }
+
+  .post-body {
+    padding: 0 28px 30px;
+  }
+
+  .post-body p {
+    margin: 12px 0;
+  }
 
   .post-body h2 {
-    font-size: 1.5em;
+    font-size: 1.35em;
     font-weight: 600;
-    margin: 56px 0 24px;
+    margin: 40px 0 18px;
     padding-bottom: 8px;
-    border-bottom: 2px solid var(--accent-dim);
+    border-bottom: 1px solid color-mix(in srgb, var(--gold) 55%, var(--border));
   }
+
   .post-body h3 {
-    font-size: 1.2em;
+    font-size: 1.16em;
     font-weight: 600;
-    margin: 36px 0 12px;
+    margin: 30px 0 10px;
     color: var(--accent);
   }
 
-  /* Code */
   .post-body pre {
-    background: var(--surface);
-    border: 1px solid var(--border);
-    border-radius: 8px;
+    background: color-mix(in srgb, var(--surface) 78%, #070d19);
+    border: 1px solid var(--border-soft);
+    border-radius: 10px;
     padding: 16px 20px;
     overflow-x: auto;
     font-size: 0.88em;
     line-height: 1.55;
     margin: 16px 0;
   }
+
   .post-body code {
-    font-family: 'SF Mono', 'Fira Code', 'Cascadia Code', monospace;
+    font-family: var(--font-mono);
   }
+
   .post-body :not(pre) > code {
-    background: var(--surface);
+    background: color-mix(in srgb, var(--surface) 70%, #070d19);
     padding: 2px 6px;
     border-radius: 4px;
     font-size: 0.9em;
     color: var(--green);
   }
 
-  /* Tables */
   .post-body table {
     width: 100%;
     border-collapse: collapse;
     margin: 20px 0;
     font-size: 0.92em;
   }
-  .post-body th, .post-body td {
+
+  .post-body th,
+  .post-body td {
     padding: 10px 14px;
     text-align: left;
-    border: 1px solid var(--border);
+    border: 1px solid var(--border-soft);
   }
+
   .post-body th {
-    background: var(--surface);
+    background: color-mix(in srgb, var(--surface) 70%, #070d19);
     font-weight: 600;
     color: var(--accent);
   }
-  .post-body td { background: var(--bg); }
 
-  /* Lists */
-  .post-body ul, .post-body ol {
+  .post-body td {
+    background: color-mix(in srgb, var(--bg) 86%, transparent);
+  }
+
+  .post-body ul,
+  .post-body ol {
     margin: 12px 0 12px 24px;
   }
-  .post-body li { margin: 6px 0; }
 
-  /* Images */
+  .post-body li {
+    margin: 6px 0;
+  }
+
   .post-body img {
     max-width: 100%;
     border-radius: 8px;
-    border: 1px solid var(--border);
+    border: 1px solid var(--border-soft);
   }
 
-  /* Callouts — use blockquotes with bold first line */
   .post-body blockquote {
-    background: var(--surface);
-    border-left: 3px solid var(--accent);
-    border-radius: 0 8px 8px 0;
+    background: color-mix(in srgb, var(--surface) 76%, #070d19);
+    border-left: 3px solid var(--gold);
+    border-radius: 0 10px 10px 0;
     padding: 16px 20px;
     margin: 20px 0;
     font-size: 0.95em;
   }
-  .post-body blockquote p { margin: 0; }
 
-  /* Diagrams — use fenced code with 'diagram' language */
+  .post-body blockquote p {
+    margin: 0;
+  }
+
   .post-body pre.diagram,
   .post-body .diagram pre {
     color: var(--text-muted);
@@ -381,20 +403,18 @@ const showToc = tocHeadings.length > 0;
     line-height: 1.5;
   }
 
-  /* Interactive component containers */
   .post-body .demo {
-    border: 1px solid var(--border);
-    border-radius: 8px;
+    border: 1px solid var(--border-soft);
+    border-radius: 10px;
     padding: 24px;
     margin: 24px 0;
-    background: var(--surface);
+    background: color-mix(in srgb, var(--surface) 76%, #070d19);
   }
 
-  /* Footer */
   .post-body .footer {
     margin-top: 64px;
     padding-top: 24px;
-    border-top: 1px solid var(--border);
+    border-top: 1px solid var(--border-soft);
     color: var(--text-muted);
     font-size: 0.85em;
     text-align: center;
@@ -402,18 +422,19 @@ const showToc = tocHeadings.length > 0;
 
   .post-toc {
     position: sticky;
-    top: 88px;
+    top: 96px;
     border: 1px solid var(--border);
-    border-radius: 10px;
-    background: var(--surface);
+    border-radius: var(--radius-md);
+    background: linear-gradient(180deg, rgba(16, 22, 36, 0.94), rgba(12, 16, 27, 0.95));
     padding: 10px;
-    max-height: calc(100vh - 110px);
+    max-height: calc(100vh - 114px);
     overflow-y: auto;
     overflow-x: hidden;
     display: flex;
     flex-direction: column;
     gap: 10px;
     transition: padding 0.15s ease;
+    box-shadow: var(--shadow-panel);
   }
 
   .post-toc .toc-collapse-toggle {
@@ -421,22 +442,23 @@ const showToc = tocHeadings.length > 0;
     display: inline-flex;
     align-items: center;
     gap: 8px;
-    border: 1px solid var(--border);
+    border: 1px solid var(--border-soft);
     border-radius: 8px;
     background: color-mix(in srgb, var(--bg) 70%, var(--surface));
     color: var(--text-muted);
     cursor: pointer;
     font: inherit;
-    font-size: 0.76em;
+    font-family: var(--font-mono);
+    font-size: 0.72rem;
     font-weight: 600;
-    letter-spacing: 0.06em;
+    letter-spacing: 0.08em;
     text-transform: uppercase;
     padding: 7px 10px;
   }
 
   .post-toc .toc-collapse-toggle:hover {
     color: var(--text);
-    border-color: color-mix(in srgb, var(--accent) 40%, var(--border));
+    border-color: color-mix(in srgb, var(--gold) 40%, var(--border));
   }
 
   .post-toc .toc-collapse-toggle:focus-visible {
@@ -455,10 +477,11 @@ const showToc = tocHeadings.length > 0;
 
   .post-toc .toc-title {
     margin: 0 0 10px;
-    font-size: 0.75em;
-    letter-spacing: 0.08em;
+    font-size: 0.72rem;
+    font-family: var(--font-mono);
+    letter-spacing: 0.09em;
     text-transform: uppercase;
-    color: var(--text-muted);
+    color: var(--gold);
   }
 
   .post-toc ul {
@@ -478,12 +501,12 @@ const showToc = tocHeadings.length > 0;
     color: var(--text-muted);
     text-decoration: none;
     line-height: 1.3;
-    font-size: 0.9em;
+    font-size: 0.86em;
   }
 
   .post-toc li.toc-depth-3 a {
     padding-left: 22px;
-    font-size: 0.84em;
+    font-size: 0.82em;
   }
 
   .post-toc a:hover,
@@ -493,6 +516,9 @@ const showToc = tocHeadings.length > 0;
   }
 
   .post-shell.has-toc.is-toc-collapsed .post-toc {
+    width: 52px;
+    margin-right: -52px;
+    transform: translateX(-64px);
     padding: 8px;
   }
 
@@ -511,9 +537,9 @@ const showToc = tocHeadings.length > 0;
   }
 
   .post-body details.phase-section {
-    border: 1px solid var(--border);
+    border: 1px solid var(--border-soft);
     border-radius: 10px;
-    background: var(--surface);
+    background: color-mix(in srgb, var(--surface) 76%, #070d19);
     margin: 28px 0;
     overflow: hidden;
   }
@@ -538,7 +564,7 @@ const showToc = tocHeadings.length > 0;
 
   .post-body details.phase-section > summary.phase-summary::after {
     content: '▸';
-    color: var(--accent);
+    color: var(--gold);
     transition: transform 0.15s ease;
     font-size: 0.9em;
   }
@@ -551,7 +577,7 @@ const showToc = tocHeadings.length > 0;
     margin: 0 !important;
     padding: 0 !important;
     border: 0 !important;
-    font-size: 1.24em;
+    font-size: 1.2em;
     color: var(--text);
   }
 
@@ -561,7 +587,7 @@ const showToc = tocHeadings.length > 0;
   }
 
   .post-body details.phase-section > .phase-content {
-    border-top: 1px solid var(--border);
+    border-top: 1px solid var(--border-soft);
     padding: 0 16px 16px;
   }
 
@@ -569,7 +595,6 @@ const showToc = tocHeadings.length > 0;
     margin-top: 16px;
   }
 
-  /* Responsive */
   @media (max-width: 1060px) {
     .post-shell.has-toc {
       display: block;
@@ -580,16 +605,32 @@ const showToc = tocHeadings.length > 0;
     }
   }
 
-  @media (max-width: 600px) {
+  @media (max-width: 720px) {
     .post-shell {
-      padding: 0 16px 64px;
+      padding: 12px 12px 64px;
     }
 
-    .post-hero h1 { font-size: 1.6em; }
-    .post-body pre { font-size: 0.8em; padding: 12px 14px; }
+    .post-hero {
+      padding: 20px 16px 16px;
+    }
+
+    .post-body {
+      padding: 0 16px 18px;
+    }
+
+    .post-hero h1 {
+      font-size: 1.55em;
+    }
+
+    .post-body pre {
+      font-size: 0.8em;
+      padding: 12px 14px;
+    }
+
     .post-body details.phase-section > summary {
       padding: 12px 14px;
     }
+
     .post-body details.phase-section > .phase-content {
       padding: 0 14px 14px;
     }

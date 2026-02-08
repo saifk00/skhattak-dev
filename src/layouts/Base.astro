@@ -7,6 +7,12 @@ interface Props {
 }
 
 const { title, description = "Saif Khattak's blog" } = Astro.props;
+const pathname = Astro.url.pathname;
+const navItems = [
+  { href: '/projects', label: 'projects' },
+  { href: '/demos', label: 'demos' },
+  { href: '/posts', label: 'posts' },
+];
 ---
 <!DOCTYPE html>
 <html lang="en">
@@ -16,39 +22,138 @@ const { title, description = "Saif Khattak's blog" } = Astro.props;
   <meta name="description" content={description} />
   <title>{title}</title>
   <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link
+    href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=Space+Grotesk:wght@400;500;600;700&display=swap"
+    rel="stylesheet"
+  />
 </head>
 <body>
-  <nav class="site-nav">
-    <a href="/" class="nav-name">saif khattak</a>
-    <div class="nav-links">
-      <a href="/projects">projects</a>
-      <a href="/demos">demos</a>
-      <a href="/posts">posts</a>
-    </div>
-  </nav>
-  <slot />
+  <div class="site-shell">
+    <nav class="site-nav">
+      <a href="/" class:list={['nav-name', pathname === '/' && 'is-active']}>
+        saif khattak
+      </a>
+      <div class="nav-links">
+        {navItems.map(item => (
+          <a
+            href={item.href}
+            class:list={[
+              pathname === item.href || pathname.startsWith(`${item.href}/`) ? 'is-active' : '',
+            ]}
+          >
+            {item.label}
+          </a>
+        ))}
+      </div>
+    </nav>
+    <slot />
+  </div>
 </body>
 </html>
 
 <style is:global>
   @import '../styles/global.css';
 
+  .site-shell {
+    position: relative;
+    padding-bottom: 70px;
+  }
+
   .site-nav {
-    max-width: 780px;
-    margin: 0 auto;
-    padding: 20px 24px;
+    max-width: 1060px;
+    margin: 18px auto 0;
+    padding: 14px 18px;
     display: flex;
     justify-content: space-between;
     align-items: center;
-    border-bottom: 1px solid var(--border);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-lg);
+    background:
+      linear-gradient(180deg, rgba(14, 20, 33, 0.95), rgba(12, 17, 27, 0.95));
+    box-shadow: var(--shadow-panel);
+    backdrop-filter: blur(4px);
   }
+
   .nav-name {
+    font-family: var(--font-mono);
     font-weight: 600;
-    font-size: 1.05em;
+    font-size: 0.95em;
+    letter-spacing: 0.07em;
+    text-transform: uppercase;
     color: var(--text);
+    padding: 9px 12px;
+    border-radius: 9px;
+    border: 1px solid transparent;
+    transition: border-color 0.15s ease, background-color 0.15s ease, color 0.15s ease;
   }
-  .nav-name:hover { text-decoration: none; color: var(--accent); }
-  .nav-links { display: flex; gap: 20px; }
-  .nav-links a { color: var(--text-muted); font-size: 0.95em; }
-  .nav-links a:hover { color: var(--accent); text-decoration: none; }
+
+  .nav-name::before {
+    content: '::';
+    color: var(--gold);
+    margin-right: 6px;
+  }
+
+  .nav-name:hover,
+  .nav-name.is-active {
+    color: #f6f8ff;
+    text-decoration: none;
+    border-color: color-mix(in srgb, var(--gold) 45%, var(--border));
+    background: color-mix(in srgb, var(--gold) 11%, transparent);
+  }
+
+  .nav-links {
+    display: flex;
+    gap: 10px;
+    flex-wrap: wrap;
+    justify-content: flex-end;
+  }
+
+  .nav-links a {
+    font-family: var(--font-mono);
+    color: var(--text-muted);
+    font-size: 0.78em;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    padding: 8px 10px;
+    border-radius: 8px;
+    border: 1px solid var(--border-soft);
+    background: color-mix(in srgb, var(--bg) 80%, transparent);
+    transition: all 0.15s ease;
+  }
+
+  .nav-links a:hover {
+    color: var(--text);
+    text-decoration: none;
+    border-color: color-mix(in srgb, var(--accent) 60%, var(--border));
+    background: color-mix(in srgb, var(--accent) 14%, transparent);
+  }
+
+  .nav-links a.is-active {
+    color: #ecf7ff;
+    border-color: color-mix(in srgb, var(--accent) 66%, var(--border));
+    background:
+      linear-gradient(
+        180deg,
+        color-mix(in srgb, var(--accent) 23%, transparent),
+        color-mix(in srgb, var(--accent) 12%, transparent)
+      );
+  }
+
+  @media (max-width: 760px) {
+    .site-nav {
+      margin: 10px 12px 0;
+      border-radius: var(--radius-md);
+      padding: 12px;
+      flex-direction: column;
+      align-items: flex-start;
+      gap: 10px;
+    }
+
+    .nav-links {
+      width: 100%;
+      justify-content: flex-start;
+    }
+  }
 </style>
