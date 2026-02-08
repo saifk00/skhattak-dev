@@ -1,0 +1,15 @@
+---
+title: "32-bit RISC-V Core Simulator"
+date: 2022-07-10
+tags: ["risc-v", "cpu", "verilog"]
+---
+
+<p>
+  This is my implementation of the RV32I base spec. I completed the basic pipeline as a school project, and I've been working on it
+  in my spare time to give it some more interesting features. The first step was to unify the instruction and data memory modules into one
+  dual-read single-write module, so that I could write to instruction memory (allowing for the <code> Zifencei </code> extension) and allow for a unified
+  cache underneath the instruction/data caches.
+  The next step was to implement some dynamic branch prediction and then move on to the CSR registers to allow for interrupt handling. The
+  whole thing is built by CMake using verilator to make simulations for each of the
+  <a href="https://github.com/riscv-software-src/riscv-tests" target="_blank">official riscv tests</a>
+</p>

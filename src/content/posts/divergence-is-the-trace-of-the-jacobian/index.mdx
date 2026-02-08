@@ -1,0 +1,29 @@
+---
+title: "Divergence is the Trace of the Jacobian"
+date: 2025-09-20
+tags: ["math", "vector-calculus"]
+---
+
+In seeking to better understand the basics of electromagnetism as described in Griffiths' *Introduction to Electrodynamics*, I had some trouble understanding divergence. I had seen the diagrams—sources and sinks, very nice. I had heard many times: "divergence measures the rate at which a vector field appears to flow out of a certain region". And I had even thought this meant I had understood divergence.
+
+But the trouble to me was that these made no sense as descriptions of a generic function over a vector space. What does it mean for a function **f: ℝⁿ → ℝᵐ** to "flow out of a certain region", and why should I believe that this is identical to the sum of its first order partial derivatives with respect to a given basis?
+
+Well I won't pretend to have a good explanation—I merely write this to point to the best one I've found: [https://math.hawaii.edu/~lee/calculus/Curl.pdf](https://math.hawaii.edu/~lee/calculus/Curl.pdf) and I quote:
+
+> The divergence of the vector field **F**, often denoted by **$\nabla \cdot F$**, is the trace of the Jacobian matrix for **$F$**, i.e. the sum of the diagonal elements of **𝒥**.
+
+Now this was intriguing, but still unintuitive. On further reading, I found a good explanation of the Jacobian in Tao's *Analysis II* - the generalization of the single-variable derivative to a function **$f: ℝⁿ \mapsto ℝᵐ$** begins by asserting that 'f being differentiable at a point x' is equivalent to the assertion that it is 'locally linearly approximable'. That is:
+
+$$
+    f(\vec{x}) \approx f(\vec{x_0}) + L(\vec{x} - \vec{x_0})
+$$
+
+for some linear map L. We know two things about L - it can be represented by a matrix (true of all linear maps), and it must map $\mathbb{R}^n \mapsto \mathbb{R}^m$ (because $\vec{x} - \vec{x_0}$ is in $\mathbb{R}^n$). Section 6.2 of Tao spells it out, but this $m \times n$ matrix turns out to be exactly the Jacobian 𝒥.
+
+We can now tie these together:
+
+- The Jacobian represents the local linear approximation of $f(\vec{x})$.
+- For vector fields $F: \mathbb{R}^n \mapsto \mathbb{R}^n$, the divergence is the trace of the Jacobian.
+- The trace of a square matrix is the sum of its eigenvalues.
+
+Thus, **divergence measures the infinitesimal rate of volume expansion** - it tells us whether a small region is being stretched (positive divergence) or compressed (negative divergence) by the vector field.

@@ -1,0 +1,55 @@
+---
+title: "Chip-8 Emulator"
+date: 2022-04-01
+tags: ["c++", "emulation", "sdl"]
+external:
+  href: "https://github.com/saifk00/SKCHIP8"
+  label: "GitHub Repo"
+---
+
+<iframe
+  width="560"
+  height="315"
+  src="https://www.youtube.com/embed/AcIrTNclo7E"
+  title="YouTube video player"
+  frameborder="0"
+  allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
+  allowfullscreen
+></iframe>
+
+<p>
+  A <a href="https://en.wikipedia.org/wiki/CHIP-8">CHIP-8</a> emulator written
+  in C++ using SDL for graphics and audio, and ImGUI for the debugging window.
+  Initially I wanted to go for an NES emulator but after learning about the
+  emulation space in general it seemed that a good first step would be a
+  CHIP-8 emulator. It's been tested on a bunch of ROMs from
+  <a href="https://github.com/kripod/chip8-roms">here</a> and I've yet to find
+  any more issues with it. One interesting point is that due to the way
+  sprites are drawn in CHIP-8, moving objects appear to flicker in the demo
+  above. Sprites are drawn by XORing sprite data with the current screen
+  state, and so to move an object you first XOR it at its current position,
+  increment the X or Y position, and then XOR it again at the new position. I
+  think this appeared more smooth on a CRT for which the ISA was designed, but
+  on a modern display it is quite noticeable.
+</p>
+
+<p>
+  Probably the most difficult thing about building an emulator is getting the
+  timing right, even in a simple system like CHIP-8. I ended up tying the
+  instruction rate to the framerate, and relying on SDL to compute said
+  framerate (the clock rate on the COSMAC VIP was ~1.76MHz but amounted to an
+  instruction execution rate of about 500 inst/sec). This also allows for
+  easier debugging than using real-time clocks, since the debugger can simply
+  stop between frames rather than have to control clocks / tick counts. This
+  is probably fine for a simple emulator like this that should run at a stable
+  rate on most machines but there are more involved techniques for more
+  complex systems, especially where there are multiple units (e.g. the PPU and
+  CPU of the NES) that run at different rates relative to eachother.
+</p>
+
+<p>
+  I also made a CHIP-8 assembler & disassembler for troubleshooting purposes,
+  and a (semi-functional) CLI version during the early stages of development
+  to avoid having to debug graphics issues before the core of the emulator was
+  done.
+</p>

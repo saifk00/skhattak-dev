@@ -1,0 +1,22 @@
+---
+import { getCollection, render } from 'astro:content';
+import Post from '../../layouts/Post.astro';
+
+export async function getStaticPaths() {
+  const posts = await getCollection('posts');
+  return posts.map(post => {
+    // post.id might be "psp-neural-networks/index" — extract just the directory name
+    const slug = post.id.includes('/') ? post.id.split('/')[0] : post.id;
+    return {
+      params: { slug },
+      props: { post },
+    };
+  });
+}
+
+const { post } = Astro.props;
+const { Content } = await render(post);
+---
+<Post title={post.data.title} subtitle={post.data.subtitle} date={post.data.date}>
+  <Content />
+</Post>

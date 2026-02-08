@@ -1,0 +1,179 @@
+---
+import Base from './Base.astro';
+
+interface ExternalLink {
+  href: string;
+  label: string;
+}
+
+interface Props {
+  title: string;
+  subtitle?: string;
+  date?: Date;
+  section?: string;
+  external?: ExternalLink;
+}
+
+const { title, subtitle, date, section, external } = Astro.props;
+const dateStr = date
+  ? date.toLocaleDateString('en-US', {
+      year: 'numeric',
+      month: 'long',
+      day: 'numeric',
+    })
+  : null;
+---
+<Base title={title}>
+  <article class="entry">
+    <header class="entry-hero">
+      {section && <p class="kicker">{section}</p>}
+      <h1>{title}</h1>
+      {subtitle && <p class="subtitle">{subtitle}</p>}
+      {(dateStr || external) && (
+        <p class="meta">
+          {dateStr && <span>{dateStr}</span>}
+          {dateStr && external && <span class="meta-sep">·</span>}
+          {external && (
+            <a href={external.href} target="_blank" rel="noopener noreferrer">
+              {external.label}
+            </a>
+          )}
+        </p>
+      )}
+    </header>
+    <div class="entry-body">
+      <slot />
+    </div>
+  </article>
+</Base>
+
+<style is:global>
+  .entry {
+    max-width: 780px;
+    margin: 0 auto;
+    padding: 0 24px 80px;
+  }
+
+  .entry-hero {
+    text-align: center;
+    padding: 60px 0 40px;
+    border-bottom: 1px solid var(--border);
+    margin-bottom: 48px;
+  }
+
+  .entry-hero .kicker {
+    font-size: 0.78em;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    color: var(--text-muted);
+    margin-bottom: 14px;
+  }
+
+  .entry-hero h1 {
+    font-size: 2.1em;
+    font-weight: 700;
+    line-height: 1.25;
+    margin-bottom: 12px;
+  }
+
+  .entry-hero .subtitle {
+    color: var(--text-muted);
+    font-size: 1.1em;
+    max-width: 640px;
+    margin: 0 auto;
+  }
+
+  .entry-hero .meta {
+    margin-top: 18px;
+    color: var(--text-muted);
+    font-size: 0.85em;
+  }
+
+  .entry-hero .meta a {
+    color: var(--accent);
+    text-decoration: none;
+  }
+
+  .entry-hero .meta a:hover {
+    text-decoration: underline;
+  }
+
+  .entry-hero .meta-sep {
+    margin: 0 8px;
+  }
+
+  .entry-body p {
+    margin: 12px 0;
+  }
+
+  .entry-body h2 {
+    font-size: 1.5em;
+    font-weight: 600;
+    margin: 56px 0 24px;
+    padding-bottom: 8px;
+    border-bottom: 2px solid var(--accent-dim);
+  }
+
+  .entry-body h3 {
+    font-size: 1.2em;
+    font-weight: 600;
+    margin: 36px 0 12px;
+    color: var(--accent);
+  }
+
+  .entry-body pre {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 16px 20px;
+    overflow-x: auto;
+    font-size: 0.88em;
+    line-height: 1.55;
+    margin: 16px 0;
+  }
+
+  .entry-body code {
+    font-family: 'SF Mono', 'Fira Code', 'Cascadia Code', monospace;
+  }
+
+  .entry-body :not(pre) > code {
+    background: var(--surface);
+    padding: 2px 6px;
+    border-radius: 4px;
+    font-size: 0.9em;
+    color: var(--green);
+  }
+
+  .entry-body ul,
+  .entry-body ol {
+    margin: 12px 0 12px 24px;
+  }
+
+  .entry-body li {
+    margin: 6px 0;
+  }
+
+  .entry-body img,
+  .entry-body video {
+    max-width: 100%;
+    height: auto;
+    display: block;
+    margin: 16px auto;
+    border-radius: 8px;
+    border: 1px solid var(--border);
+  }
+
+  .entry-body iframe {
+    max-width: 100%;
+    display: block;
+    margin: 16px auto;
+    border-radius: 8px;
+    border: 1px solid var(--border);
+  }
+
+  @media (max-width: 600px) {
+    .entry-hero h1 {
+      font-size: 1.6em;
+    }
+  }
+</style>

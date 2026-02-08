@@ -1,0 +1,60 @@
+---
+import Base from '../../layouts/Base.astro';
+import { getCollection } from 'astro:content';
+
+const posts = (await getCollection('posts'))
+  .filter(p => !p.data.draft)
+  .sort((a, b) => b.data.date.valueOf() - a.data.date.valueOf());
+---
+<Base title="Posts – Saif Khattak">
+  <main class="posts-page">
+    <h1>all posts</h1>
+    <ul>
+      {posts.map(post => {
+        const slug = post.id.includes('/') ? post.id.split('/')[0] : post.id;
+        return (
+          <li>
+            <a href={`/posts/${slug}/`}>
+              <span class="post-title">{post.data.title}</span>
+              <span class="post-date">
+                {post.data.date.toLocaleDateString('en-US', { year: 'numeric', month: 'short', day: 'numeric' })}
+              </span>
+            </a>
+          </li>
+        );
+      })}
+    </ul>
+  </main>
+</Base>
+
+<style>
+  .posts-page {
+    max-width: 780px;
+    margin: 0 auto;
+    padding: 60px 24px 80px;
+  }
+  .posts-page h1 {
+    font-size: 1.8em;
+    font-weight: 700;
+    margin-bottom: 32px;
+  }
+  ul { list-style: none; }
+  li { border-bottom: 1px solid var(--border); }
+  a {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 16px 0;
+    color: var(--text);
+    text-decoration: none;
+    transition: color 0.15s;
+  }
+  a:hover { color: var(--accent); }
+  .post-title { font-weight: 500; }
+  .post-date {
+    color: var(--text-muted);
+    font-size: 0.85em;
+    white-space: nowrap;
+    margin-left: 16px;
+  }
+</style>
