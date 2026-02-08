@@ -2,6 +2,7 @@
 import Base from '../layouts/Base.astro';
 import { getCollection } from 'astro:content';
 import LetterboxdRecent from '../components/LetterboxdRecent.tsx';
+import FlickrRecent from '../components/FlickrRecent.tsx';
 
 const posts = (await getCollection('posts'))
   .filter(p => !p.data.draft)
@@ -69,13 +70,21 @@ const demos = (await getCollection('demos')).filter(d => !d.data.draft);
       </ul>
     </section>
 
-    <section class="watch-panel panel">
-      <LetterboxdRecent client:load />
+    <section class="media-grid">
+      <section class="watch-panel panel">
+        <LetterboxdRecent client:load />
+      </section>
+      <section class="photo-panel panel">
+        <FlickrRecent client:load />
+      </section>
     </section>
 
     <noscript>
       <p class="letterboxd-fallback panel">
         Recent watches: <a href="https://letterboxd.com/xiphosen/">letterboxd.com/xiphosen</a>
+      </p>
+      <p class="letterboxd-fallback panel">
+        Recent photos: <a href="https://flickr.com/photos/198040252@N06/">flickr.com/photos/198040252@N06</a>
       </p>
     </noscript>
   </main>
@@ -245,13 +254,30 @@ const demos = (await getCollection('demos')).filter(d => !d.data.draft);
     margin-left: 8px;
   }
 
+  .media-grid {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 20px;
+    align-items: start;
+  }
+
   .watch-panel {
+    padding: 0 18px 0;
+  }
+
+  .photo-panel {
     padding: 0 18px 0;
   }
 
   .letterboxd-fallback {
     color: var(--text-muted);
     padding: 18px;
+  }
+
+  @media (max-width: 980px) {
+    .media-grid {
+      grid-template-columns: 1fr;
+    }
   }
 
   @media (max-width: 900px) {
