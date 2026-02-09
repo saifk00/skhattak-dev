@@ -10,6 +10,7 @@ interactive:
 
 import CodeTabs from '../../../components/post/CodeTabs.astro';
 import Im2ColGeminiDemo from '../../../components/post/Im2ColGeminiDemo.tsx';
+import TiledMatmulGeminiDemo from '../../../components/post/TiledMatmulGeminiDemo.tsx';
 
 This project started with a simple question: can a 2004 handheld run modern ML inference?
 
@@ -673,6 +674,21 @@ I had Gemini sketch an im2col visualizer, so I cleaned it up and embedded it her
 Use the mode switch to compare direct convolution vs im2col/GEMM form, then step through the 16 positions.
 
 <Im2ColGeminiDemo client:visible />
+
+## Appendix: Tiled 4x4 MatMul Visualization
+
+Another Gemini-generated sketch, cleaned up and aligned.
+
+This one demonstrates tiled matmul when the primitive op is 4x4 and the shapes are:
+
+- A: 7 x 6
+- B: 6 x 9
+- C: 7 x 9
+
+Step through and watch the active A/B/C tiles:
+`C[r, c] += A[r, n] x B[n, c]`.
+
+<TiledMatmulGeminiDemo client:visible />
 
 ## What I Learned
 
